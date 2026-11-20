@@ -1,5 +1,7 @@
 # 🎄 ASCII Christmas Tree
 
+link: https://mecker714.github.io/python3/
+
 파이썬 표준 라이브러리만으로 만든 3D 아스키 크리스마스 트리입니다.
 터미널에서도 돌고, GitHub Pages에서는 같은 `tree.py`가 브라우저(Pyodide)에서 그대로 실행됩니다.
 
