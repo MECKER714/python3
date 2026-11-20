@@ -9,8 +9,9 @@ tree.py - 터미널에서 도는 3D 아스키 크리스마스 트리 (파이썬 
   타임라인
     0초   트리 회전 + 눈
     0~3초 금색 전구 줄 / 꼬마전구 / 꼭대기 별이 아래부터 차례로 달림
-    5초   산타 썰매가 위쪽을 지나감 (선물은 처음부터 트리 밑에 놓여 있음)
-    12초  가장 큰 상자에 이름표가 달리고, 열리면서 MESSAGE가 한 글자씩 나옴
+    0~3초 오너먼트(구슬/종/리본/고드름/별/진주줄)가 아래부터 차례로 달림
+    5초   산타 썰매가 위쪽을 지나감
+    12초  MESSAGE가 한 글자씩 나옴
 
   같은 파일을 GitHub Pages(Pyodide)에서도 그대로 사용합니다. -> render_frame()
 """
@@ -24,8 +25,7 @@ import time
 # ----------------------------------------------------------------------------
 # 설정
 # ----------------------------------------------------------------------------
-MESSAGE = "메리 크리스마스! 올해도 고생 많았어요"   # 상자에서 나오는 문구
-TAG = "직원"                                        # 상자 이름표
+MESSAGE = "메리 크리스마스! 올해도 고생 많았어요"   # 12초에 한 글자씩 나오는 문구
 
 FPS = 20
 RAMP = ".:-=+*#%@"                  # 어두움 -> 밝음
@@ -34,28 +34,18 @@ MIN_COLS, MIN_ROWS = 80, 26
 T_DECOR = 3.0        # 장식이 아래부터 달리는 시간(초)
 T_SLEIGH = 5.0       # 썰매 등장
 SLEIGH_DUR = 5.0     # 썰매가 화면을 가로지르는 시간
-T_OPEN = 12.0        # 이름표 + 상자 열기 시작
-TAG_DUR = 0.6        # 이름표 달리는 시간
-OPEN_DELAY = 0.8     # 이름표 후 열리기까지
-OPEN_DUR = 1.2       # 뚜껑 열리는 시간
+T_MSG = 12.0         # 메시지 등장
 TYPE_SPEED = 0.10    # 글자당 초
 
-GREEN = [22, 22, 28, 34, 34, 40, 46, 82, 118]      # 잎 (RAMP와 같은 길이)
-BROWN = [52, 94, 94, 130, 130, 136, 172, 172, 178]  # 기둥
+GREEN = [22, 29, 65, 65, 71, 71, 108, 114, 151]     # 잎: 눈이 편한 차분한 초록
+BROWN = [58, 95, 95, 101, 137, 137, 138, 144, 180]  # 기둥: 톤다운 브라운
+# 파스텔 구슬 색 -> 어두운 가장자리 색
+DEEP = {218: 175, 153: 110, 183: 139, 158: 108, 229: 186, 223: 180, 217: 174}
+PASTEL = (218, 153, 183, 158, 229, 223, 217)
 
 PHI = 0.22                          # 카메라 기울기(위에서 내려다봄)
 LIGHT = (-0.45, 0.55, 0.70)         # 빛 방향
 SPIN = 0.7                          # 트리 회전 속도(rad/s)
-
-# (중심 x 오프셋, 몸통 너비, 몸통 높이, 몸통색, 리본색)  - 가운데가 가장 큰 상자
-GIFTS = [
-    (-23, 7, 2, 153, 231),
-    (-12, 9, 3, 183, 229),
-    (0, 13, 5, 217, 195),
-    (13, 9, 3, 223, 153),
-    (23, 7, 2, 158, 218),
-]
-BIG = 2
 
 SLEIGH = [
     "  Y Y    Y Y                   .-==-.   ",
@@ -65,7 +55,6 @@ SLEIGH = [
 ]
 SL_W = max(len(s) for s in SLEIGH)
 SL_SPLIT = 27        # 이 열부터 썰매(빨강), 앞은 순록
-SLEIGH_DROP = 33     # 썰매 배(선물 떨어뜨리는 위치) 열
 
 
 # ----------------------------------------------------------------------------
@@ -200,23 +189,60 @@ class Geometry:
                                    (rnd.random() - 0.5) * 0.2))
 
         # 금색 전구 줄 나선 (y 오름차순)
+        def surf(y, th, k=1.03):
+            r = radius(y) * k + 0.01
+            return r * math.cos(th), r * math.sin(th)
+
         self.spiral = []
         ns = int(U * 40)
         for k in range(ns):
             s = k / ns
             y = 0.03 + 0.93 * s
-            th = tau * 6.0 * s
-            r = radius(y) * 1.07 + 0.012
-            self.spiral.append((r * math.cos(th), y, r * math.sin(th), k))
+            x, z = surf(y, tau * 6.0 * s, 1.06)
+            self.spiral.append((x, y, z, k))
 
-        # 빨강 / 파랑 / 분홍 꼬마전구
+        # 진주 줄 (반대 방향으로 감김)
+        self.pearls = []
+        npl = int(U * 16)
+        for k in range(npl):
+            s = k / npl
+            y = 0.06 + 0.86 * s
+            x, z = surf(y, -tau * 4.0 * s + 1.0, 1.07)
+            self.pearls.append((x, y, z, k))
+
+        # 오너먼트: B 큰 구슬, s 작은 구슬, I 고드름, W 리본, L 종, T 반짝 별
+        self.orn = []
+        for k, n in enumerate((8, 7, 6, 5)):
+            yt = k / 4 + 0.02
+            for j in range(n):
+                th = tau * (j + 0.5 * (k % 2) + (rnd.random() - 0.5) * 0.3) / n
+                x, z = surf(yt, th)
+                self.orn.append((x, yt, z, "B", rnd.choice(PASTEL), 0.0))
+                x, z = surf(k / 4 + 0.005, tau * (j + 0.5 + 0.5 * (k % 2)) / n, 1.0)
+                self.orn.append((x, k / 4 + 0.005, z, "I", 195, 0.0))
+        for _ in range(16):
+            y = 0.10 + 0.78 * rnd.random()
+            x, z = surf(y, rnd.random() * tau)
+            self.orn.append((x, y, z, "s", rnd.choice(PASTEL), 0.0))
+        for _ in range(8):
+            y = 0.12 + 0.70 * rnd.random()
+            x, z = surf(y, rnd.random() * tau)
+            self.orn.append((x, y, z, "L", 186, 0.0))
+        for k in range(6):
+            y = 0.15 + 0.14 * k
+            x, z = surf(y, rnd.random() * tau)
+            self.orn.append((x, y, z, "W", rnd.choice((218, 183)), 0.0))
+        for _ in range(14):
+            y = 0.10 + 0.85 * rnd.random()
+            x, z = surf(y, rnd.random() * tau)
+            self.orn.append((x, y, z, "T", 229, rnd.random()))
+
+        # 분홍 / 하늘 / 살구빛 꼬마전구
         self.lights = []
         for _ in range(44):
             y = 0.04 + 0.90 * (1 - math.sqrt(rnd.random()))
-            th = rnd.random() * tau
-            r = radius(y) * 1.06 + 0.012
-            col = rnd.choice((210, 117, 218))
-            self.lights.append((r * math.cos(th), y, r * math.sin(th), col,
+            x, z = surf(y, rnd.random() * tau, 1.05)
+            self.lights.append((x, y, z, rnd.choice((210, 117, 218)),
                                 1.0 + rnd.random() * 1.8, rnd.random()))
 
         # 꼭대기 별 (두 평면을 교차시켜 어느 각도에서도 보이게)
@@ -273,7 +299,6 @@ class Scene:
         self.message = MESSAGE if message is None else message
         self._geo = {}
         self._snow = {}
-        self._open = None
 
     def geometry(self, U):
         key = round(U, 1)
@@ -304,17 +329,14 @@ class Scene:
         U = min((g - 1 - 5) / 1.39, W * 0.30)
         geo = self.geometry(U)
         snow = self.snow(W, g)
-        self._open = None
 
         self._flakes(cv, snow.at(t, (0, 1)), only_empty=True)
         self._tree(cv, t, geo, U, g, cx)
         self._ground(cv, g)
         v = (W + SL_W) / SLEIGH_DUR
-        for i in range(len(GIFTS)):
-            self._gift(cv, i, t, g, cx, v)
         self._sleigh(cv, t, v)
         self._flakes(cv, snow.at(t, (2,)), only_empty=False)
-        self._message(cv, t, W)
+        self._message(cv, t, W, g, cx)
         return "\x1b[H" + "\n".join(cv.lines())
 
     # ---- 눈 -----------------------------------------------------------------
@@ -373,21 +395,58 @@ class Scene:
         yrev = -0.05 + 1.22 * q              # 장식이 달린 높이(아래 -> 위)
         flashing = t < T_DECOR + 0.3
 
-        # 금색 전구 줄
-        for x, y, z, k in geo.spiral:
-            if y > yrev:
-                break
-            ix, iy, zp = proj(x, y, z)
-            if 0 <= ix < W and 0 <= iy < H and zp + 0.04 > zb[iy][ix]:
-                if flashing and yrev - y < 0.05:
-                    ch, fg = "@", 231
-                else:
-                    ch = "o"
-                    fg = 231 if math.sin(k * 0.30 - t * 9) > 0.7 else (229 if zp > 0 else 186)
-                zb[iy][ix] = zp + 0.04
-                cells[iy][ix] = (ch, fg, None)
+        # 금색 전구 줄 + 진주 줄
+        for pts, kind in ((geo.spiral, 0), (geo.pearls, 1)):
+            for x, y, z, k in pts:
+                if y > yrev:
+                    break
+                ix, iy, zp = proj(x, y, z)
+                if 0 <= ix < W and 0 <= iy < H and zp + 0.04 > zb[iy][ix]:
+                    if flashing and yrev - y < 0.05:
+                        ch, fg = "@", 231
+                    elif kind == 0:
+                        ch = "o"
+                        fg = 231 if math.sin(k * 0.30 - t * 9) > 0.7 else (229 if zp > 0 else 186)
+                    else:
+                        ch = "O"
+                        fg = 231 if zp > 0.1 else 224
+                    zb[iy][ix] = zp + 0.04
+                    cells[iy][ix] = (ch, fg, None)
 
-        # 꼬마전구 깜빡임
+        # 오너먼트
+        for x, y, z, kind, col, ph in geo.orn:
+            if y > yrev:
+                continue
+            ix, iy, zp = proj(x, y, z)
+            if not (0 <= ix < W and 0 <= iy < H) or zp < -0.05 or zp + 0.05 <= zb[iy][ix]:
+                continue
+            zb[iy][ix] = zp + 0.05
+            if flashing and yrev - y < 0.05:
+                cv.put(ix, iy, "@", 231)
+                continue
+            deep = DEEP.get(col, col)
+            if kind == "B":                      # (@') 하이라이트가 있는 구슬 + 금색 캡
+                cv.put(ix - 1, iy, "(", 231)
+                cv.put(ix, iy, "@", col)
+                cv.put(ix + 1, iy, ")", deep)
+                cv.put(ix, iy - 1, "'", 186)
+            elif kind == "s":
+                cv.put(ix, iy, "@", col)
+            elif kind == "I":                    # 고드름
+                cv.put(ix, iy, "|", 195)
+                cv.put(ix, iy + 1, ":", 153)
+            elif kind == "W":                    # 리본
+                cv.put(ix - 1, iy, ">", col)
+                cv.put(ix, iy, "@", deep)
+                cv.put(ix + 1, iy, "<", col)
+            elif kind == "L":                    # 종
+                cv.put(ix, iy, "A", 186)
+                cv.put(ix, iy + 1, "o", 229)
+            else:                                # 반짝이는 작은 별
+                on = ((t * 1.5 + ph) % 1.0) < 0.5
+                cv.put(ix, iy, "*" if on else "+", 229 if on else 230)
+
+        # 꼬마전구 깜빡임 (양옆으로 은은한 빛번짐)
         for x, y, z, col, rate, ph in geo.lights:
             if y > yrev:
                 continue
@@ -397,7 +456,10 @@ class Scene:
             ix, iy, zp = proj(x, y, z)
             if 0 <= ix < W and 0 <= iy < H and zp + 0.06 > zb[iy][ix]:
                 zb[iy][ix] = zp + 0.06
-                cells[iy][ix] = ("O", 231 if flash else col, None)
+                cells[iy][ix] = ("@", 231 if flash else col, None)
+                if not flash:
+                    cv.put(ix - 1, iy, "-", col)
+                    cv.put(ix + 1, iy, "-", col)
 
         # 별
         if yrev >= 1.0:
@@ -441,84 +503,23 @@ class Scene:
                 cv.put(xl - k, row + 1 + rnd.randint(0, 2), rnd.choice("*+."),
                        rnd.choice((229, 231, 218, 153)))
 
-    # ---- 선물 ---------------------------------------------------------------
-    def _gift(self, cv, i, t, g, cx, v):
-        off, bw, bh, body, rib = GIFTS[i]
-        gx = cx + off
-        total_h = bh + 2
-        rb = g - 1                                  # 몸통 맨 아랫줄
-        left = gx - bw // 2
-        lid_row = rb - bh
-        body_top = lid_row + 1
-        is_big = i == BIG
-
-        p = 0.0
-        if is_big and t >= T_OPEN + OPEN_DELAY:
-            p = min(1.0, (t - T_OPEN - OPEN_DELAY) / OPEN_DUR)
-            p = 1 - (1 - p) ** 2
-
-        rcols = {bw // 2} if bw < 11 else {bw // 2 - 1, bw // 2, bw // 2 + 1}
-        mid = bh // 2
-        for r in range(bh):
-            for c in range(bw):
-                cv.put(left + c, body_top + r, " ", None,
-                       rib if (c in rcols or r == mid) else body)
-
-        lift = int(round(3 * p))
-        dx = int(round(3 * p))
-        ly = lid_row - lift
-        if p > 0:                                   # 열린 입구(빛)
-            for c in range(-1, bw + 1):
-                cv.put(left + c, lid_row, ":" if (c + int(t * 8)) % 2 else " ", 229, 60)
-        for c in range(-1, bw + 1):                 # 뚜껑
-            inr = c in rcols
-            cv.put(left + c + dx, ly, " " if inr else "=", 231, rib if inr else body)
-        for k, ch in enumerate("\\@/"):             # 리본 매듭
-            cv.put(gx - 1 + k + dx, ly - 1, ch, rib)
-
-        if is_big:
-            if t >= T_OPEN:                         # 이름표
-                pt = min(1.0, (t - T_OPEN) / TAG_DUR)
-                e = 1 - (1 - pt) ** 2
-                dy = int(round((1 - e) * 6))
-                s = "[" + TAG + "]"
-                x = gx - text_width(s) // 2
-                for ch in s:
-                    cv.put(x, rb - 1 - dy, ch, 95, 230)
-                    x += cw(ch)
-            self._open = (gx, lid_row, p)
-
     # ---- 메시지 -------------------------------------------------------------
-    def _message(self, cv, t, W):
-        if not self._open or self._open[2] <= 0:
+    def _message(self, cv, t, W, g, cx):
+        if t < T_MSG:
             return
-        gx, lid_row, p = self._open
         lines = wrap(self.message, max(10, W - 12))
         L = len(lines)
         dw = max(text_width(s) for s in lines)
         bw = dw + 4
-        bx = max(0, min(W - bw, gx - bw // 2))
-        box_bottom = max(L + 1, lid_row - 6)
+        bx = max(0, min(W - bw, cx - bw // 2))
+        box_bottom = g - 2
         box_top = box_bottom - L - 1
-
-        # 빛줄기
-        reach = int(p * (lid_row - box_bottom - 1))
-        for k in range(-3, 4):
-            for n in range(1, reach + 1):
-                yy = lid_row - n
-                col = gx + int(k * (1 + n * 0.25))
-                cv.put(col, yy, "|" if k % 2 == 0 else ":",
-                       229 if (yy + int(t * 12) + k) % 3 else 230)
-
-        if p < 0.7:
-            return
         for y in range(box_top, box_bottom + 1):
             for x in range(bx, bx + bw):
                 cv.put(x, y, " ", None, 224)
-        cv.put(bx, box_top, "*", 217, 224)
-        cv.put(bx + bw - 1, box_top, "*", 217, 224)
-        cv.put(bx, box_bottom, "*", 217, 224)
-        cv.put(bx + bw - 1, box_bottom, "*", 217, 224)
+        for x, y in ((bx, box_top), (bx + bw - 1, box_top),
+                     (bx, box_bottom), (bx + bw - 1, box_bottom)):
+            cv.put(x, y, "*", 217, 224)
 
         chars = []
         for li, line in enumerate(lines):
@@ -527,19 +528,19 @@ class Scene:
                 chars.append((x, box_top + 1 + li, ch))
                 x += cw(ch)
 
-        t_type0 = T_OPEN + OPEN_DELAY + OPEN_DUR
+        t_type0 = T_MSG + 0.4
         cnt = 0 if t < t_type0 else int((t - t_type0) / TYPE_SPEED) + 1
         for x, y, ch in chars[:cnt]:
             cv.put(x, y, ch, 95, 224)
         if cnt < len(chars):                       # 커서
-            x, y, _ = chars[cnt]
+            x, y, _ = chars[min(cnt, len(chars) - 1)]
             if int(t * 4) % 2 == 0 or cnt > 0:
                 cv.put(x, y, "_", 175, 224)
         else:                                      # 다 나온 뒤 반짝이
             rnd = random.Random(int(t * 8))
             for _ in range(10):
                 sx = rnd.randint(bx - 4, bx + bw + 3)
-                sy = rnd.randint(box_top - 2, lid_row - 2)
+                sy = rnd.randint(box_top - 3, box_bottom + 1)
                 inside = 0 <= sy < cv.h and 0 <= sx < cv.w
                 if inside and cv.cells[sy][sx] == BLANK:
                     cv.put(sx, sy, rnd.choice("*+."), rnd.choice((229, 231, 218, 153)))
