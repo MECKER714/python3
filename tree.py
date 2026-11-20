@@ -9,7 +9,7 @@ tree.py - 터미널에서 도는 3D 아스키 크리스마스 트리 (파이썬 
   타임라인
     0초   트리 회전 + 눈
     0~3초 금색 전구 줄 / 꼬마전구 / 꼭대기 별이 아래부터 차례로 달림
-    5초   산타 썰매가 지나가며 선물 5개를 떨어뜨림 (바닥에서 통통 튐)
+    5초   산타 썰매가 위쪽을 지나감 (선물은 처음부터 트리 밑에 놓여 있음)
     12초  가장 큰 상자에 이름표가 달리고, 열리면서 MESSAGE가 한 글자씩 나옴
 
   같은 파일을 GitHub Pages(Pyodide)에서도 그대로 사용합니다. -> render_frame()
@@ -47,16 +47,13 @@ PHI = 0.22                          # 카메라 기울기(위에서 내려다봄
 LIGHT = (-0.45, 0.55, 0.70)         # 빛 방향
 SPIN = 0.7                          # 트리 회전 속도(rad/s)
 
-GRAV = 48.0                         # 선물 낙하 중력(행/초^2)
-REST = 0.52                         # 반발 계수
-
 # (중심 x 오프셋, 몸통 너비, 몸통 높이, 몸통색, 리본색)  - 가운데가 가장 큰 상자
 GIFTS = [
-    (-23, 7, 2, 33, 15),
-    (-12, 9, 3, 164, 226),
-    (0, 13, 5, 160, 220),
-    (13, 9, 3, 208, 21),
-    (23, 7, 2, 37, 213),
+    (-23, 7, 2, 153, 231),
+    (-12, 9, 3, 183, 229),
+    (0, 13, 5, 217, 195),
+    (13, 9, 3, 223, 153),
+    (23, 7, 2, 158, 218),
 ]
 BIG = 2
 
@@ -171,22 +168,6 @@ def radius(y):
     return base * (1 - 0.60 * u)
 
 
-def bounce(tau, h0):
-    """h0 높이에서 떨어뜨린 뒤 tau초 지난 시점의 바닥으로부터 높이."""
-    t0 = math.sqrt(2 * h0 / GRAV)
-    if tau < t0:
-        return h0 - 0.5 * GRAV * tau * tau
-    tau -= t0
-    v = GRAV * t0 * REST
-    while v > 3.5:
-        tb = 2 * v / GRAV
-        if tau < tb:
-            return v * tau - 0.5 * GRAV * tau * tau
-        tau -= tb
-        v *= REST
-    return 0.0
-
-
 class Geometry:
     def __init__(self, U):
         rnd = random.Random(1225)
@@ -234,7 +215,7 @@ class Geometry:
             y = 0.04 + 0.90 * (1 - math.sqrt(rnd.random()))
             th = rnd.random() * tau
             r = radius(y) * 1.06 + 0.012
-            col = rnd.choice((196, 39, 213))
+            col = rnd.choice((210, 117, 218))
             self.lights.append((r * math.cos(th), y, r * math.sin(th), col,
                                 1.0 + rnd.random() * 1.8, rnd.random()))
 
@@ -259,7 +240,7 @@ class Geometry:
 
 class Snow:
     LAYER_CH = (".", "+", "*")
-    LAYER_FG = (244, 250, 15)
+    LAYER_FG = (240, 247, 255)
 
     def __init__(self, W, g):
         rnd = random.Random(77)
@@ -402,7 +383,7 @@ class Scene:
                     ch, fg = "@", 231
                 else:
                     ch = "o"
-                    fg = 229 if math.sin(k * 0.30 - t * 9) > 0.7 else (220 if zp > 0 else 178)
+                    fg = 231 if math.sin(k * 0.30 - t * 9) > 0.7 else (229 if zp > 0 else 186)
                 zb[iy][ix] = zp + 0.04
                 cells[iy][ix] = (ch, fg, None)
 
@@ -420,19 +401,19 @@ class Scene:
 
         # 별
         if yrev >= 1.0:
-            fg = 226 if int(t * 6) % 2 else 227
+            fg = 229 if int(t * 6) % 2 else 230
             for i, (x, y, z) in enumerate(geo.star):
                 ix, iy, zp = proj(x, y, z)
                 if 0 <= ix < W and 0 <= iy < H and zp + 0.10 > zb[iy][ix]:
                     zb[iy][ix] = zp + 0.10
-                    cells[iy][ix] = ("@" if i == 0 else "*", 229 if i == 0 else fg, None)
+                    cells[iy][ix] = ("@" if i == 0 else "*", 231 if i == 0 else fg, None)
             sx, sy, _ = proj(0.0, geo.star_cy, 0.0)
             if int(t * 4) % 2:
                 for dx, dy, ch in ((-6, 0, "-"), (6, 0, "-"), (0, -3, "|"), (0, 3, "|")):
-                    cv.put(sx + dx, sy + dy, ch, 228)
+                    cv.put(sx + dx, sy + dy, ch, 230)
             else:
                 for dx, dy in ((-5, -2), (5, -2), (-5, 2), (5, 2)):
-                    cv.put(sx + dx, sy + dy, "+", 228)
+                    cv.put(sx + dx, sy + dy, "+", 230)
 
     # ---- 썰매 ---------------------------------------------------------------
     def _sleigh_row(self, t):
@@ -450,27 +431,22 @@ class Scene:
                 if ch == " ":
                     continue
                 if c < SL_SPLIT:
-                    fg = 137 if ch == "Y" else (220 if ch == "~" else (196 if ch == ">" else 180))
+                    fg = 180 if ch == "Y" else (229 if ch == "~" else (217 if ch == ">" else 223))
                 else:
-                    fg = 224 if ch == "@" else (231 if ch in ".-=" and r == 0 else 196)
+                    fg = 224 if ch == "@" else (231 if ch in ".-=" and r == 0 else 217)
                 cv.put(xl + c, row + r, ch, fg)
         rnd = random.Random(int(t * 12))
         for k in range(1, 12):
             if rnd.random() < 1 - k / 12:
                 cv.put(xl - k, row + 1 + rnd.randint(0, 2), rnd.choice("*+."),
-                       rnd.choice((226, 231, 217)))
+                       rnd.choice((229, 231, 218, 153)))
 
     # ---- 선물 ---------------------------------------------------------------
     def _gift(self, cv, i, t, g, cx, v):
         off, bw, bh, body, rib = GIFTS[i]
         gx = cx + off
         total_h = bh + 2
-        t_drop = T_SLEIGH + (gx - SLEIGH_DROP + SL_W) / v
-        if t < t_drop:
-            return
-        start_bottom = self._sleigh_row(t_drop) + len(SLEIGH) + total_h - 1
-        h0 = max(2.0, (g - 1) - start_bottom)
-        rb = (g - 1) - int(round(bounce(t - t_drop, h0)))   # 몸통 맨 아랫줄
+        rb = g - 1                                  # 몸통 맨 아랫줄
         left = gx - bw // 2
         lid_row = rb - bh
         body_top = lid_row + 1
@@ -493,10 +469,10 @@ class Scene:
         ly = lid_row - lift
         if p > 0:                                   # 열린 입구(빛)
             for c in range(-1, bw + 1):
-                cv.put(left + c, lid_row, ":" if (c + int(t * 8)) % 2 else " ", 226, 16)
+                cv.put(left + c, lid_row, ":" if (c + int(t * 8)) % 2 else " ", 229, 60)
         for c in range(-1, bw + 1):                 # 뚜껑
             inr = c in rcols
-            cv.put(left + c + dx, ly, " " if inr else "=", 15, rib if inr else body)
+            cv.put(left + c + dx, ly, " " if inr else "=", 231, rib if inr else body)
         for k, ch in enumerate("\\@/"):             # 리본 매듭
             cv.put(gx - 1 + k + dx, ly - 1, ch, rib)
 
@@ -508,7 +484,7 @@ class Scene:
                 s = "[" + TAG + "]"
                 x = gx - text_width(s) // 2
                 for ch in s:
-                    cv.put(x, rb - 1 - dy, ch, 16, 231)
+                    cv.put(x, rb - 1 - dy, ch, 95, 230)
                     x += cw(ch)
             self._open = (gx, lid_row, p)
 
@@ -532,17 +508,17 @@ class Scene:
                 yy = lid_row - n
                 col = gx + int(k * (1 + n * 0.25))
                 cv.put(col, yy, "|" if k % 2 == 0 else ":",
-                       226 if (yy + int(t * 12) + k) % 3 else 220)
+                       229 if (yy + int(t * 12) + k) % 3 else 230)
 
         if p < 0.7:
             return
         for y in range(box_top, box_bottom + 1):
             for x in range(bx, bx + bw):
-                cv.put(x, y, " ", None, 52)
-        cv.put(bx, box_top, "*", 226, 52)
-        cv.put(bx + bw - 1, box_top, "*", 226, 52)
-        cv.put(bx, box_bottom, "*", 226, 52)
-        cv.put(bx + bw - 1, box_bottom, "*", 226, 52)
+                cv.put(x, y, " ", None, 224)
+        cv.put(bx, box_top, "*", 217, 224)
+        cv.put(bx + bw - 1, box_top, "*", 217, 224)
+        cv.put(bx, box_bottom, "*", 217, 224)
+        cv.put(bx + bw - 1, box_bottom, "*", 217, 224)
 
         chars = []
         for li, line in enumerate(lines):
@@ -554,11 +530,11 @@ class Scene:
         t_type0 = T_OPEN + OPEN_DELAY + OPEN_DUR
         cnt = 0 if t < t_type0 else int((t - t_type0) / TYPE_SPEED) + 1
         for x, y, ch in chars[:cnt]:
-            cv.put(x, y, ch, 231, 52)
+            cv.put(x, y, ch, 95, 224)
         if cnt < len(chars):                       # 커서
             x, y, _ = chars[cnt]
             if int(t * 4) % 2 == 0 or cnt > 0:
-                cv.put(x, y, "_", 226, 52)
+                cv.put(x, y, "_", 175, 224)
         else:                                      # 다 나온 뒤 반짝이
             rnd = random.Random(int(t * 8))
             for _ in range(10):
@@ -566,7 +542,7 @@ class Scene:
                 sy = rnd.randint(box_top - 2, lid_row - 2)
                 inside = 0 <= sy < cv.h and 0 <= sx < cv.w
                 if inside and cv.cells[sy][sx] == BLANK:
-                    cv.put(sx, sy, rnd.choice("*+."), rnd.choice((226, 231, 213, 51)))
+                    cv.put(sx, sy, rnd.choice("*+."), rnd.choice((229, 231, 218, 153)))
 
 
 # ----------------------------------------------------------------------------

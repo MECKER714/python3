@@ -9,26 +9,13 @@
   :root { color-scheme: dark; }
   html, body { height: 100%; margin: 0; background: #05070a; color: #cfd8dc;
                font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif; }
-  #app { display: flex; flex-direction: column; height: 100%; }
-  header { display: flex; align-items: center; gap: 12px; padding: 8px 14px;
-           font-size: 14px; border-bottom: 1px solid #1b232c; }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
-  header .sp { flex: 1; }
-  button { background: #1b232c; color: #e6edf3; border: 1px solid #2c3845;
-           border-radius: 6px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
-  button:hover { background: #26323e; }
-  #term { flex: 1; min-height: 0; padding: 6px 8px; box-sizing: border-box; overflow: hidden; }
+  #app { height: 100%; }
+  #term { height: 100%; padding: 6px 8px; box-sizing: border-box; overflow: hidden; }
   .xterm-viewport { overflow: hidden !important; }
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
-    <h1>🎄 ASCII Christmas Tree</h1>
-    <span class="sp"></span>
-    <span id="status">Python 불러오는 중…</span>
-    <button id="restart" type="button">처음부터 다시</button>
-  </header>
   <div id="term"></div>
 </div>
 
@@ -40,7 +27,6 @@
   const MIN_COLS = 80;
   const FPS = 20;
   const el = document.getElementById("term");
-  const statusEl = document.getElementById("status");
 
   const term = new Terminal({
     convertEol: true,
@@ -77,18 +63,13 @@
     pyodide.runPython("import sys; sys.path.insert(0, '/tmp')");
     tree = pyodide.pyimport("tree");
   } catch (err) {
-    statusEl.textContent = "불러오기 실패";
     term.write("\x1b[2J\x1b[H" + String(err).replace(/\n/g, "\r\n"));
     return;
   }
 
-  statusEl.textContent = "실행 중 (tree.py)";
+  term.write("\x1b[2J");
   let t0 = performance.now();
   let last = 0;
-  document.getElementById("restart").addEventListener("click", () => {
-    t0 = performance.now();
-    term.write("\x1b[2J");
-  });
 
   function loop(now) {
     requestAnimationFrame(loop);
@@ -97,7 +78,7 @@
     try {
       term.write(tree.render_frame((now - t0) / 1000, term.cols, term.rows));
     } catch (err) {
-      statusEl.textContent = "오류: " + err;
+      term.write("\x1b[2J\x1b[H" + String(err));
     }
   }
   requestAnimationFrame(loop);
